@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1081636730361",
+    "project_id": "glady-ce3fe",
+    "storage_bucket": "glady-ce3fe.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1081636730361:android:ac428b9227402491cdf928",
+        "android_client_info": {
+          "package_name": "com.example.full_node_chat_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDr3Z-btuXNWGFTzDexu92fL8sHbyKgulE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1081636730361:android:c7a5acae9587b189cdf928",
+        "android_client_info": {
+          "package_name": "com.gladtech.glady"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDr3Z-btuXNWGFTzDexu92fL8sHbyKgulE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
