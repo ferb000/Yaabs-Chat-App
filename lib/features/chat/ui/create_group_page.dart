@@ -5,6 +5,8 @@ import '../../users/ui/people_page.dart' show usersApiProvider;
 import '../state/conversations_controller.dart';
 // import '../data/chat_api.dart';
 import 'chat_room_page.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../users/ui/widgets/profile_avatar.dart';
 
 class CreateGroupPage extends ConsumerStatefulWidget {
   const CreateGroupPage({super.key});
@@ -81,10 +83,11 @@ class _CreateGroupPageState extends ConsumerState<CreateGroupPage> {
         );
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Failed: $e')));
+      }
     } finally {
       if (mounted) setState(() => _creating = false);
     }
@@ -93,101 +96,240 @@ class _CreateGroupPageState extends ConsumerState<CreateGroupPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Create group'),
-        actions: [
-          TextButton(
-            onPressed: _creating ? null : _createGroup,
-            child: _creating
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Create'),
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            TextField(
-              controller: _title,
-              decoration: const InputDecoration(
-                labelText: 'Group name',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _q,
-                    decoration: const InputDecoration(
-                      hintText: 'Search users',
-                      border: OutlineInputBorder(),
-                    ),
-                    onSubmitted: (_) => _search(),
+      backgroundColor: AppColors.bg,
+      appBar: AppBar(title: const Text('Create group')),
+      body: Container(
+        decoration: const BoxDecoration(gradient: AppGradients.background),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
+                child: Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: buildGlassCardDecoration(radius: 28),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Create group',
+                              style: Theme.of(context).textTheme.headlineSmall
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                          FilledButton(
+                            onPressed: _creating ? null : _createGroup,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: AppColors.primaryDark,
+                            ),
+                            child: _creating
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Create'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Build a polished group space with selected members and a custom title.',
+                        style: const TextStyle(color: AppColors.muted),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: _title,
+                        decoration: const InputDecoration(
+                          labelText: 'Group name',
+                          prefixIcon: Icon(
+                            Icons.group_rounded,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _q,
+                              onSubmitted: (_) => _search(),
+                              decoration: const InputDecoration(
+                                hintText: 'Search users',
+                                prefixIcon: Icon(
+                                  Icons.search_rounded,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          FilledButton(
+                            onPressed: _loading ? null : _search,
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: AppColors.primaryDark,
+                            ),
+                            child: _loading
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Search'),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _loading ? null : _search,
-                  child: _loading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Text('Search'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('Selected: ${_selectedIds.length}'),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: ListView.separated(
-                itemCount: _results.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                itemBuilder: (_, i) {
-                  final u = _results[i];
-                  final id = u['id'] as String;
-                  final name = (u['username'] as String?)?.isNotEmpty == true
-                      ? u['username'] as String
-                      : (u['email'] as String);
-
-                  final selected = _selectedIds.contains(id);
-
-                  return ListTile(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    tileColor: Colors.grey.withOpacity(0.08),
-                    title: Text(name),
-                    subtitle: Text(u['email'] as String),
-                    trailing: Checkbox(
-                      value: selected,
-                      onChanged: (v) {
-                        setState(() {
-                          if (v == true) {
-                            _selectedIds.add(id);
-                          } else {
-                            _selectedIds.remove(id);
-                          }
-                        });
-                      },
-                    ),
-                  );
-                },
               ),
-            ),
-          ],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: Row(
+                  children: [
+                    Text(
+                      'Selected ${_selectedIds.length}',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      _selectedIds.length < 2 ? 'Need 2+' : 'Ready to create',
+                      style: TextStyle(
+                        color: _selectedIds.length < 2
+                            ? AppColors.muted
+                            : AppColors.primaryDark,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+              Expanded(
+                child: _results.isEmpty
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(18),
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: buildGlassCardDecoration(radius: 28),
+                            child: const Column(
+                              children: [
+                                Icon(
+                                  Icons.group_work_rounded,
+                                  size: 44,
+                                  color: AppColors.primary,
+                                ),
+                                SizedBox(height: 12),
+                                Text(
+                                  'Search and pick members',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                                SizedBox(height: 6),
+                                Text(
+                                  'Selected people will appear here with a cleaner group-creation flow.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: AppColors.muted),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      )
+                    : ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        itemCount: _results.length,
+                        padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(height: 12),
+                        itemBuilder: (_, i) {
+                          final u = _results[i];
+                          final id = u['id'] as String;
+                          final name =
+                              (u['username'] as String?)?.isNotEmpty == true
+                              ? u['username'] as String
+                              : (u['email'] as String);
+                          final avatarUrl =
+                              (u['avatarUrl'] as String?) ??
+                              (u['avatar_url'] as String?);
+
+                          final selected = _selectedIds.contains(id);
+
+                          return Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: buildGlassCardDecoration(radius: 28),
+                            child: Row(
+                              children: [
+                                ProfileAvatar(
+                                  name: name,
+                                  avatarUrl: avatarUrl,
+                                  size: 54,
+                                  radius: 18,
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        u['email'] as String,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(color: AppColors.muted),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Switch.adaptive(
+                                  value: selected,
+                                  onChanged: (v) {
+                                    setState(() {
+                                      if (v) {
+                                        _selectedIds.add(id);
+                                      } else {
+                                        _selectedIds.remove(id);
+                                      }
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );

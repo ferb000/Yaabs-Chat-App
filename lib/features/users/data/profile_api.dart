@@ -10,6 +10,14 @@ class ProfileApi {
     return (res.data as Map).cast<String, dynamic>();
   }
 
+  Future<Map<String, dynamic>> updateAvatar(String avatarUrl) async {
+    final res = await dio.patch(
+      Endpoints.meAvatar,
+      data: {'avatarUrl': avatarUrl},
+    );
+    return (res.data as Map).cast<String, dynamic>();
+  }
+
   Future<void> follow(String userId) =>
       dio.post(Endpoints.follow, data: {'userId': userId});
   Future<void> unfollow(String userId) =>

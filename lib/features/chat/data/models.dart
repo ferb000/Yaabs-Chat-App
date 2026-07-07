@@ -2,14 +2,44 @@ class Conversation {
   final String id;
   final String type; // direct/group
   final String? title;
+  final String? displayTitle;
+  final String? displaySubtitle;
+  final String? avatarUrl;
+  final List<ConversationMember> members;
 
-  Conversation({required this.id, required this.type, this.title});
+  Conversation({
+    required this.id,
+    required this.type,
+    this.title,
+    this.displayTitle,
+    this.displaySubtitle,
+    this.avatarUrl,
+    this.members = const [],
+  });
 
   factory Conversation.fromJson(Map<String, dynamic> json) => Conversation(
     id: json['id'] as String,
     type: json['type'] as String,
     title: json['title'] as String?,
+    displayTitle:
+        json['displayTitle'] as String? ?? json['display_title'] as String?,
+    displaySubtitle:
+        json['displaySubtitle'] as String? ??
+        json['display_subtitle'] as String?,
+    avatarUrl: json['avatarUrl'] as String? ?? json['avatar_url'] as String?,
+    members: ((json['members'] as List?) ?? const [])
+        .map(
+          (e) =>
+              ConversationMember.fromJson((e as Map).cast<String, dynamic>()),
+        )
+        .toList(),
   );
+
+  String get resolvedTitle =>
+      displayTitle ??
+      (type == 'group'
+          ? (title?.trim().isNotEmpty == true ? title! : 'Group')
+          : 'Direct chat');
 }
 
 class ChatMessage {

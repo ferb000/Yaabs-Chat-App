@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
+import '../utils/media_url.dart';
 
 class PostImageViewerPage extends StatefulWidget {
   const PostImageViewerPage({
@@ -46,8 +47,19 @@ class _PostImageViewerPageState extends State<PostImageViewerPage> {
         itemCount: widget.images.length,
         onPageChanged: (i) => setState(() => _index = i),
         itemBuilder: (_, i) {
+          final url = widget.images[i];
+          if (isVideoMediaUrl(url)) {
+            return const Center(
+              child: Text(
+                'This media is a video and cannot be opened in the image viewer.',
+                style: TextStyle(color: Colors.white),
+                textAlign: TextAlign.center,
+              ),
+            );
+          }
+
           return PhotoView(
-            imageProvider: NetworkImage(widget.images[i]),
+            imageProvider: NetworkImage(resolveMediaUrl(url)),
             minScale: PhotoViewComputedScale.contained,
             maxScale: PhotoViewComputedScale.covered * 2.5,
             backgroundDecoration: const BoxDecoration(color: Colors.black),

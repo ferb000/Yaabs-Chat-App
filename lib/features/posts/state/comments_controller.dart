@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-// import '../data/posts_api.dart';
+
+import '../../auth/state/auth_controller.dart';
 import '../data/models.dart';
 import 'feed_controller.dart';
 
@@ -7,21 +8,25 @@ class CommentsState {
   final List<Comment> items;
   final String? nextCursor;
   final bool isLoadingMore;
+  final bool isCreating;
 
   CommentsState({
     required this.items,
     this.nextCursor,
     this.isLoadingMore = false,
+    this.isCreating = false,
   });
 
   CommentsState copyWith({
     List<Comment>? items,
     String? nextCursor,
     bool? isLoadingMore,
+    bool? isCreating,
   }) => CommentsState(
     items: items ?? this.items,
     nextCursor: nextCursor ?? this.nextCursor,
     isLoadingMore: isLoadingMore ?? this.isLoadingMore,
+    isCreating: isCreating ?? this.isCreating,
   );
 }
 
@@ -60,21 +65,70 @@ class CommentsController extends StateNotifier<AsyncValue<CommentsState>> {
 
   Future<void> create(String text) async {
     final api = ref.read(postsApiProvider);
-    final current = state.value;
-    if (current == null) return;
+    final current = state.value ?? CommentsState(items: []);
+    final me = ref.read(authControllerProvider).user;
 
-    final res = await api.createComment(postId, text);
-    final comment = Comment.fromJson(
-      (res['comment'] as Map).cast<String, dynamic>(),
+    final optimisticId = 'tmp-${DateTime.now().microsecondsSinceEpoch}';
+    final optimisticAuthor = PostAuthor(
+      id: me?.id ?? '',
+      email: me?.email ?? 'me',
+      username: me?.username,
+      avatarUrl: me?.avatarUrl,
     );
-    final commentCount = (res['commentCount'] as num).toInt();
+    final optimistic = Comment(
+      id: optimisticId,
+      text: text,
+      createdAt: DateTime.now(),
+      author: optimisticAuthor,
+    );
 
     state = AsyncValue.data(
-      current.copyWith(items: [comment, ...current.items]),
+      current.copyWith(isCreating: true, items: [optimistic, ...current.items]),
     );
-    ref
-        .read(feedControllerProvider.notifier)
-        .applyCommentCount(postId, commentCount);
+
+    try {
+      final res = await api.createComment(postId, text);
+      final rawComment = res['comment'];
+      final commentCount = (res['commentCount'] as num?)?.toInt();
+
+      final updated = current.items
+          .where((c) => c.id != optimisticId)
+          .toList(growable: true);
+
+      if (rawComment is Map) {
+        final created = Comment.fromJson(rawComment.cast<String, dynamic>());
+        updated.insert(0, created);
+      } else {
+        final latest = await api.listComments(postId, limit: 20);
+        updated
+          ..clear()
+          ..addAll(
+            (latest['items'] as List)
+                .map(
+                  (e) => Comment.fromJson((e as Map).cast<String, dynamic>()),
+                )
+                .toList(),
+          );
+      }
+
+      state = AsyncValue.data(
+        current.copyWith(items: updated, isCreating: false),
+      );
+
+      if (commentCount != null) {
+        ref
+            .read(feedControllerProvider.notifier)
+            .applyCommentCount(postId, commentCount);
+      }
+    } catch (e) {
+      state = AsyncValue.data(
+        current.copyWith(
+          isCreating: false,
+          items: current.items.where((c) => c.id != optimisticId).toList(),
+        ),
+      );
+      rethrow;
+    }
   }
 
   Future<void> delete(String commentId) async {
@@ -82,7 +136,6 @@ class CommentsController extends StateNotifier<AsyncValue<CommentsState>> {
     final current = state.value;
     if (current == null) return;
 
-    // optimistic remove
     final updated = current.items.where((c) => c.id != commentId).toList();
     state = AsyncValue.data(current.copyWith(items: updated));
 
@@ -93,7 +146,6 @@ class CommentsController extends StateNotifier<AsyncValue<CommentsState>> {
           .read(feedControllerProvider.notifier)
           .applyCommentCount(postId, commentCount);
     } catch (_) {
-      // revert
       state = AsyncValue.data(current);
     }
   }

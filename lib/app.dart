@@ -11,10 +11,11 @@ import 'features/notifications/notification_navigation_service.dart';
 import 'features/chat/ui/chat_room_page.dart';
 import 'features/posts/ui/post_loader_page.dart';
 import 'features/auth/ui/login_page.dart';
-import 'features/posts/ui/feed_page.dart';
 import 'features/auth/state/auth_controller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
+import 'core/theme/app_theme.dart';
+import 'features/navigation/main_shell.dart';
 
 // class App extends ConsumerStatefulWidget {
 //   const App({super.key});
@@ -66,7 +67,8 @@ class _AppState extends ConsumerState<App> {
     return MaterialApp(
       navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
-      home: auth.user == null ? const LoginPage() : const FeedPage(),
+      theme: buildAppTheme(),
+      home: auth.user == null ? const LoginPage() : const MainShell(),
       onGenerateRoute: (settings) {
         if (settings.name == '/chat') {
           final args = settings.arguments as Map<String, dynamic>;

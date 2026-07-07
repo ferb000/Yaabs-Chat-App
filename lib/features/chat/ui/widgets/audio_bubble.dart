@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../media/audio/audio_player_controller.dart';
+import '../../../posts/utils/media_url.dart';
 
 class AudioBubble extends ConsumerWidget {
   const AudioBubble({
@@ -18,9 +19,11 @@ class AudioBubble extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final audio = ref.watch(audioPlayerControllerProvider);
     final controller = ref.read(audioPlayerControllerProvider.notifier);
+    final resolvedUrl = resolveMediaUrl(url);
 
-    final isCurrent = audio.url == url;
+    final isCurrent = audio.url == resolvedUrl;
     final playing = isCurrent && audio.playing;
+    final hasError = isCurrent && audio.errorMessage != null;
 
     final duration = isCurrent
         ? audio.duration
@@ -41,38 +44,68 @@ class AudioBubble extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
       decoration: BoxDecoration(
         color: isMine
-            ? Colors.blue.withOpacity(0.15)
-            : Colors.grey.withOpacity(0.12),
+            ? Colors.blue.withValues(alpha: 0.15)
+            : Colors.grey.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            onPressed: () => controller.toggle(url),
-            icon: Icon(
-              playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
+          if (hasError)
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              onPressed: () => controller.toggle(resolvedUrl),
+              icon: const Icon(Icons.refresh_rounded),
+            )
+          else
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              onPressed: audio.loading
+                  ? null
+                  : () => controller.toggle(resolvedUrl),
+              icon: Icon(
+                playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
+              ),
             ),
-          ),
           SizedBox(
             width: 160,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Slider(
-                  value: value,
-                  min: 0,
-                  max: max,
-                  onChanged: isCurrent
-                      ? (v) =>
-                            controller.seek(Duration(milliseconds: v.toInt()))
-                      : null, // only seek when current
-                ),
+                if (hasError)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6, bottom: 4),
+                    child: Text(
+                      'Audio failed to load',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.red.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )
+                else if (audio.loading && isCurrent)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 10, bottom: 10),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  )
+                else
+                  Slider(
+                    value: value,
+                    min: 0,
+                    max: max,
+                    onChanged: isCurrent
+                        ? (v) =>
+                              controller.seek(Duration(milliseconds: v.toInt()))
+                        : null, // only seek when current
+                  ),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(_fmt(position), style: const TextStyle(fontSize: 11)),
+                    Text(
+                      hasError ? 'Retry' : _fmt(position),
+                      style: const TextStyle(fontSize: 11),
+                    ),
                     Text(_fmt(duration), style: const TextStyle(fontSize: 11)),
                   ],
                 ),

@@ -84,11 +84,18 @@ import 'notification_navigation_service.dart';
 
 class PushService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  bool _initialized = false;
+  bool _listenersAttached = false;
+  String? _cachedToken;
 
   static const String _webVapidKey =
       'BKXJqbMxo1rMGLQIzepHxkInnk12s_qUXqBG_g_JxHQfv_axUdaOpTkvuMq0QpPd0KkUmAjy84rBcTHBb0tslMM';
 
   Future<String?> init() async {
+    if (_initialized) {
+      return _cachedToken;
+    }
+
     final before = await _messaging.getNotificationSettings();
     debugPrint(
       'Push permission status (before): ${before.authorizationStatus}',
@@ -108,28 +115,36 @@ class PushService {
       }
       debugPrint('FCM TOKEN => $token');
     } catch (e, st) {
-      debugPrint('FCM getToken failed: $e');
+      debugPrint(
+        'FCM getToken failed: $e. On Android emulators this usually means the system image does not have Google Play services or Firebase Installations cannot reach Google services.',
+      );
       debugPrintStack(stackTrace: st);
     }
 
-    // App is open
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint('Foreground push title: ${message.notification?.title}');
-      debugPrint('Foreground push body: ${message.notification?.body}');
-      debugPrint('Foreground push data: ${message.data}');
-    });
+    if (!_listenersAttached) {
+      _listenersAttached = true;
 
-    // App in background, user taps notification
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      NotificationNavigationService.handleData(message.data);
-    });
+      // App is open
+      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        debugPrint('Foreground push title: ${message.notification?.title}');
+        debugPrint('Foreground push body: ${message.notification?.body}');
+        debugPrint('Foreground push data: ${message.data}');
+      });
 
-    // App was terminated, opened by tapping notification
-    final initialMessage = await _messaging.getInitialMessage();
-    if (initialMessage != null) {
-      NotificationNavigationService.handleData(initialMessage.data);
+      // App in background, user taps notification
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+        NotificationNavigationService.handleData(message.data);
+      });
+
+      // App was terminated, opened by tapping notification
+      final initialMessage = await _messaging.getInitialMessage();
+      if (initialMessage != null) {
+        NotificationNavigationService.handleData(initialMessage.data);
+      }
     }
 
+    _cachedToken = token;
+    _initialized = true;
     return token;
   }
 }

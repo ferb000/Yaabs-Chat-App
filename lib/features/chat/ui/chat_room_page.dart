@@ -1,4 +1,3 @@
-// import 'dart:io';s
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,17 +5,19 @@ import '../state/chat_room_controller.dart';
 import '../../media/data/media_api.dart';
 import '../../../core/di/providers.dart';
 import '../data/models.dart';
+import '../../posts/utils/media_url.dart';
 
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'widgets/audio_bubble.dart';
 
-import '../../presence/state/presence_controller.dart';
 import '../../auth/state/auth_controller.dart';
+import '../../presence/state/presence_controller.dart';
+import '../../users/ui/widgets/profile_avatar.dart';
 
 import 'package:flutter/foundation.dart'; // kIsWeb
-import 'dart:typed_data';
+import '../../../core/theme/app_theme.dart';
 
 class ChatRoomPage extends ConsumerStatefulWidget {
   const ChatRoomPage({
@@ -36,8 +37,10 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
   final _text = TextEditingController();
   final _picker = ImagePicker();
   final _recorder = AudioRecorder();
+  final _scrollController = ScrollController();
 
   bool _recording = false;
+  bool _initialJumpDone = false;
 
   XFile? _pendingImage;
   bool _uploadingImage = false;
@@ -45,22 +48,23 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
   @override
   void dispose() {
     _text.dispose();
+    _scrollController.dispose();
     _recorder.dispose();
     super.dispose();
   }
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final c = ref.read(
-        chatRoomControllerProvider(widget.conversationId).notifier,
+  void _scrollToBottom({bool jump = false}) {
+    if (!_scrollController.hasClients) return;
+    final target = _scrollController.position.maxScrollExtent;
+    if (jump) {
+      _scrollController.jumpTo(target);
+    } else {
+      _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
       );
-      final other = c.otherUserId;
-      if (other != null) {
-        ref.read(presenceControllerProvider.notifier).fetchPresence(other);
-      }
-    });
+    }
   }
 
   @override
@@ -71,190 +75,304 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
     );
     final presenceMap = ref.watch(presenceControllerProvider);
     final otherId = controller.otherUserId;
+    ConversationMember? otherMember;
+    if (otherId != null) {
+      for (final member in state.members) {
+        if (member.userId == otherId) {
+          otherMember = member;
+          break;
+        }
+      }
+    }
 
     final presence = (otherId != null) ? presenceMap[otherId] : null;
     final statusText = () {
       if (otherId == null) return widget.title; // group
       if (presence?.isOnline == true) return 'Online';
       final seen = presence?.lastSeenAt;
-      if (seen == null) return 'Last seen: unknown';
+      if (seen == null) return 'Last seen recently';
       return 'Last seen: ${_fmtTime(seen)}';
     }();
 
+    if (state.messages.isNotEmpty && !_initialJumpDone) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _initialJumpDone) return;
+        _initialJumpDone = true;
+        _scrollToBottom(jump: true);
+      });
+    }
+
     return Scaffold(
+      backgroundColor: AppColors.bg,
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        titleSpacing: 0,
+        title: Row(
           children: [
-            Text(widget.title),
-            Text(statusText, style: const TextStyle(fontSize: 12)),
-          ],
-        ),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (n) {
-                if (n.metrics.pixels < 120) {
-                  controller.loadMore();
-                }
-                return false;
-              },
-              child: ListView.builder(
-                padding: const EdgeInsets.all(12),
-                itemCount: state.messages.length,
-                itemBuilder: (context, i) {
-                  final m = state.messages[i];
-
-                  final myId = ref.watch(authControllerProvider).user?.id;
-                  final isMine = myId != null && m.senderId == myId;
-                  final isLast = i == state.messages.length - 1;
-
-                  final controller = ref.read(
-                    chatRoomControllerProvider(widget.conversationId).notifier,
-                  );
-
-                  // ---------- Read / Seen Status ----------
-                  Widget? status;
-
-                  if (isLast && isMine) {
-                    // Direct chat
-                    if (controller.otherUserId != null) {
-                      final other = controller.otherUserId!;
-                      final seen = controller.isReadBy(other, m.id);
-
-                      status = Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          seen ? 'Seen' : 'Delivered',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      );
-                    }
-                    // Group chat
-                    else if (state.members.length > 2) {
-                      final count = controller.readByCount(m.id);
-
-                      status = Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          count == 0 ? 'Delivered' : 'Read by $count',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      );
-                    }
-                  }
-
-                  // ---------- Message Bubble ----------
-                  // final bubble = Container(
-                  //   margin: const EdgeInsets.only(bottom: 4),
-                  //   padding: const EdgeInsets.all(10),
-                  //   decoration: BoxDecoration(
-                  //     color: isMine
-                  //         ? Colors.blue.withOpacity(0.15)
-                  //         : Colors.grey.withOpacity(0.12),
-                  //     borderRadius: BorderRadius.circular(14),
-                  //   ),
-                  //   child: _messageBody(m, state)
-                  // );
-                  final bubble = ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 280),
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 4),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: isMine
-                            ? Colors.blue.withOpacity(0.15)
-                            : Colors.grey.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: _messageBody(m, state, isMine),
-                    ),
-                  );
-
-                  return Align(
-                    alignment: isMine
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
-                    child: Column(
-                      crossAxisAlignment: isMine
-                          ? CrossAxisAlignment.end
-                          : CrossAxisAlignment.start,
-                      children: [bubble, if (status != null) status],
-                    ),
-                  );
-                },
-              ),
+            ProfileAvatar(
+              name: widget.title,
+              avatarUrl: otherMember?.avatarUrl,
+              size: 40,
+              radius: 14,
             ),
-          ),
-          if (state.typingUsers.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: 12, right: 12, bottom: 6),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Typing...',
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
-              ),
-            ),
-          if (_pendingImage != null)
-            _ImagePreviewBar(
-              file: _pendingImage!,
-              uploading: _uploadingImage,
-              onCancel: () => setState(() => _pendingImage = null),
-              onSend: () => _sendPendingImage(controller),
-            ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Row(
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.image_outlined),
-                    onPressed: _uploadingImage ? null : _pickImageForPreview,
+                  Text(
+                    widget.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  IconButton(
-                    icon: Icon(
-                      _recording
-                          ? Icons.stop_circle_outlined
-                          : Icons.mic_none_outlined,
-                    ),
-                    onPressed: () => _toggleRecord(controller),
-                    // onPressed: () {},
-                  ),
-                  Expanded(
-                    child: TextField(
-                      controller: _text,
-                      onChanged: controller.onTextChanged,
-                      decoration: const InputDecoration(
-                        hintText: 'Message...',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () async {
-                      final v = _text.text.trim();
-                      if (v.isEmpty) return;
-                      await controller.sendText(v);
-                      _text.clear();
-                    },
-                    child: const Text('Send'),
+                  Text(
+                    statusText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12.5),
                   ),
                 ],
               ),
             ),
+          ],
+        ),
+        actions: [
+          IconButton(onPressed: () {}, icon: const Icon(Icons.call_rounded)),
+          IconButton(
+            onPressed: () {},
+            icon: const Icon(Icons.more_vert_rounded),
           ),
+          const SizedBox(width: 8),
         ],
+      ),
+      body: Container(
+        decoration: const BoxDecoration(gradient: AppGradients.background),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            children: [
+              Expanded(
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: (n) {
+                    if (n.metrics.pixels < 120) {
+                      controller.loadMore();
+                    }
+                    return false;
+                  },
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(14, 6, 14, 16),
+                    itemCount:
+                        state.messages.length + (state.isLoadingMore ? 1 : 0),
+                    itemBuilder: (context, i) {
+                      if (state.isLoadingMore && i == 0) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+
+                      final messageIndex = i - (state.isLoadingMore ? 1 : 0);
+                      final m = state.messages[messageIndex];
+
+                      final myId = ref.watch(authControllerProvider).user?.id;
+                      final isMine = myId != null && m.senderId == myId;
+                      final isLast = messageIndex == state.messages.length - 1;
+
+                      final controller = ref.read(
+                        chatRoomControllerProvider(
+                          widget.conversationId,
+                        ).notifier,
+                      );
+
+                      Widget? status;
+
+                      if (isLast && isMine) {
+                        if (controller.otherUserId != null) {
+                          final other = controller.otherUserId!;
+                          final seen = controller.isReadBy(other, m.id);
+
+                          status = Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              seen ? 'Seen' : 'Delivered',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          );
+                        } else if (state.members.length > 2) {
+                          final count = controller.readByCount(m.id);
+
+                          status = Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              count == 0 ? 'Delivered' : 'Read by $count',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          );
+                        }
+                      }
+
+                      final bubble = ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 320),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 4),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isMine
+                                ? AppColors.outgoing
+                                : AppColors.surface,
+                            borderRadius: BorderRadius.only(
+                              topLeft: const Radius.circular(22),
+                              topRight: const Radius.circular(22),
+                              bottomLeft: Radius.circular(isMine ? 22 : 6),
+                              bottomRight: Radius.circular(isMine ? 6 : 22),
+                            ),
+                            boxShadow: isMine ? null : AppShadows.soft,
+                            border: Border.all(
+                              color: isMine
+                                  ? Colors.transparent
+                                  : AppColors.border,
+                            ),
+                          ),
+                          child: _messageBody(m, state, isMine),
+                        ),
+                      );
+
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Align(
+                          alignment: isMine
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft,
+                          child: Column(
+                            crossAxisAlignment: isMine
+                                ? CrossAxisAlignment.end
+                                : CrossAxisAlignment.start,
+                            children: [
+                              bubble,
+                              status ?? const SizedBox.shrink(),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              if (state.typingUsers.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    bottom: 8,
+                  ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: Text(
+                        'Typing...',
+                        style: TextStyle(color: Colors.grey.shade700),
+                      ),
+                    ),
+                  ),
+                ),
+              if (_pendingImage != null)
+                _ImagePreviewBar(
+                  file: _pendingImage!,
+                  uploading: _uploadingImage,
+                  onCancel: () => setState(() => _pendingImage = null),
+                  onSend: () => _sendPendingImage(controller),
+                ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(28),
+                      border: Border.all(color: AppColors.border),
+                      boxShadow: AppShadows.soft,
+                    ),
+                    child: Row(
+                      children: [
+                        _ComposerIcon(
+                          icon: Icons.image_outlined,
+                          onPressed: _uploadingImage
+                              ? null
+                              : _pickImageForPreview,
+                        ),
+                        _ComposerIcon(
+                          icon: _recording
+                              ? Icons.stop_circle_outlined
+                              : Icons.mic_none_outlined,
+                          onPressed: () => _toggleRecord(controller),
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: TextField(
+                            controller: _text,
+                            onChanged: controller.onTextChanged,
+                            minLines: 1,
+                            maxLines: 4,
+                            decoration: InputDecoration(
+                              hintText: 'Message',
+                              filled: true,
+                              fillColor: AppColors.bg,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(22),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () async {
+                            final v = _text.text.trim();
+                            if (v.isEmpty) return;
+                            await controller.sendText(v);
+                            _text.clear();
+                            _scrollToBottom();
+                          },
+                          style: FilledButton.styleFrom(
+                            shape: const CircleBorder(),
+                            padding: const EdgeInsets.all(14),
+                            backgroundColor: AppColors.primary,
+                          ),
+                          child: const Icon(Icons.send_rounded, size: 20),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -273,33 +391,7 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
       final url = media?.url;
       if (url == null) return const Text('[Image]');
 
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Image.network(
-          url,
-          fit: BoxFit.cover,
-          loadingBuilder: (context, child, progress) {
-            if (progress == null) return child;
-            return SizedBox(
-              width: 220,
-              height: 220,
-              child: Center(
-                child: CircularProgressIndicator(
-                  value: progress.expectedTotalBytes == null
-                      ? null
-                      : progress.cumulativeBytesLoaded /
-                            progress.expectedTotalBytes!,
-                ),
-              ),
-            );
-          },
-          errorBuilder: (_, __, ___) => const SizedBox(
-            width: 220,
-            height: 220,
-            child: Center(child: Text('Image failed')),
-          ),
-        ),
-      );
+      return _ChatMediaImage(url: url);
     }
 
     if (m.type == 'audio') {
@@ -315,25 +407,6 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
 
     // text
     return Text(_renderMessage(m));
-  }
-
-  Future<void> _sendImage(ChatRoomController controller) async {
-    final picked = await _picker.pickImage(source: ImageSource.gallery);
-    if (picked == null) return;
-
-    final dio = ref.read(dioProvider);
-    final api = MediaApi(dio);
-
-    final media = await api.uploadXFile(picked);
-
-    await controller.sendMedia(
-      MessageMedia(
-        url: media['url'] as String,
-        mime: media['mime'] as String,
-        sizeBytes: (media['sizeBytes'] as num).toInt(),
-        mediaType: 'image',
-      ),
-    );
   }
 
   Future<void> _toggleRecord(ChatRoomController controller) async {
@@ -366,6 +439,7 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
           mediaType: 'audio',
         ),
       );
+      _scrollToBottom();
       return;
     }
 
@@ -422,6 +496,7 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
           mediaType: 'image',
         ),
       );
+      _scrollToBottom();
 
       if (mounted) {
         setState(() {
@@ -436,6 +511,97 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to send image: $e')));
     }
+  }
+}
+
+class _ComposerIcon extends StatelessWidget {
+  const _ComposerIcon({required this.icon, required this.onPressed});
+
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onPressed,
+      style: IconButton.styleFrom(
+        backgroundColor: AppColors.chip,
+        foregroundColor: AppColors.primaryDark,
+      ),
+      icon: Icon(icon),
+    );
+  }
+}
+
+class _ChatMediaImage extends StatefulWidget {
+  const _ChatMediaImage({required this.url});
+
+  final String url;
+
+  @override
+  State<_ChatMediaImage> createState() => _ChatMediaImageState();
+}
+
+class _ChatMediaImageState extends State<_ChatMediaImage> {
+  int _retryToken = 0;
+
+  void _retry() => setState(() => _retryToken++);
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedUrl = resolveMediaUrl(widget.url);
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Stack(
+        children: [
+          Image.network(
+            resolvedUrl,
+            key: ValueKey('${resolvedUrl}_$_retryToken'),
+            fit: BoxFit.cover,
+            loadingBuilder: (context, child, progress) {
+              if (progress == null) return child;
+              return SizedBox(
+                width: 220,
+                height: 220,
+                child: Center(
+                  child: CircularProgressIndicator(
+                    value: progress.expectedTotalBytes == null
+                        ? null
+                        : progress.cumulativeBytesLoaded /
+                              progress.expectedTotalBytes!,
+                  ),
+                ),
+              );
+            },
+            errorBuilder: (context, error, stackTrace) {
+              return SizedBox(
+                width: 220,
+                height: 220,
+                child: Container(
+                  color: AppColors.chip,
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.broken_image_outlined, size: 34),
+                      const SizedBox(height: 10),
+                      const Text('Image failed', textAlign: TextAlign.center),
+                      const SizedBox(height: 10),
+                      TextButton.icon(
+                        onPressed: _retry,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -459,7 +625,7 @@ class _ImagePreviewBar extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: Colors.grey.withOpacity(0.08),
+          color: Colors.grey.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(14),
         ),
         child: Row(

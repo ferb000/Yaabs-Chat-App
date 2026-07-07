@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "com.gladtech.glady"
+    namespace = "com.example.full_node_chat_app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 

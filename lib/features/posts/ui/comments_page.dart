@@ -13,16 +13,28 @@ class CommentsPage extends ConsumerStatefulWidget {
 
 class _CommentsPageState extends ConsumerState<CommentsPage> {
   final _text = TextEditingController();
+  final _scrollController = ScrollController();
 
   @override
   void dispose() {
     _text.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _scrollToNewest() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final commentsAsync = ref.watch(commentsControllerProvider(widget.postId));
+    final commentsState = commentsAsync.valueOrNull;
     final me = ref.watch(authControllerProvider.select((s) => s.user));
 
     return Scaffold(
@@ -50,26 +62,58 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                     return false;
                   },
                   child: ListView.separated(
+                    controller: _scrollController,
+                    reverse: true,
                     padding: const EdgeInsets.all(12),
                     itemCount: state.items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 10),
                     itemBuilder: (context, i) {
                       final c = state.items[i];
                       final author = c.author.username?.isNotEmpty == true
                           ? c.author.username!
                           : c.author.email;
 
+                      final isSending = c.id.startsWith('tmp-');
+
                       return ListTile(
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        tileColor: Colors.grey.withOpacity(0.08),
-                        title: Text(
-                          author,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        tileColor: Colors.grey.withValues(alpha: 0.08),
+                        title: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                author,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            if (isSending)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                                child: const Text(
+                                  'Sending...',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.orange,
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                         subtitle: Text(c.text),
-                        trailing: me?.id == c.author.id
+                        trailing: me?.id == c.author.id && !isSending
                             ? IconButton(
                                 icon: const Icon(Icons.delete_outline),
                                 onPressed: () => ref
@@ -104,17 +148,33 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
-                    onPressed: () async {
-                      final v = _text.text.trim();
-                      if (v.isEmpty) return;
-                      await ref
-                          .read(
-                            commentsControllerProvider(widget.postId).notifier,
+                    onPressed: commentsState?.isCreating == true
+                        ? null
+                        : () async {
+                            final v = _text.text.trim();
+                            if (v.isEmpty) return;
+                            try {
+                              await ref
+                                  .read(
+                                    commentsControllerProvider(
+                                      widget.postId,
+                                    ).notifier,
+                                  )
+                                  .create(v);
+                              _text.clear();
+                              if (context.mounted) {
+                                FocusScope.of(context).unfocus();
+                              }
+                              _scrollToNewest();
+                            } catch (_) {}
+                          },
+                    child: commentsState?.isCreating == true
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                          .create(v);
-                      _text.clear();
-                    },
-                    child: const Text('Send'),
+                        : const Text('Send'),
                   ),
                 ],
               ),

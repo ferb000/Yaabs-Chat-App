@@ -87,10 +87,24 @@ class Comment {
 
   factory Comment.fromJson(Map<String, dynamic> json) => Comment(
     id: json['id'] as String,
-    text: json['text'] as String,
-    createdAt: DateTime.parse(json['created_at'] as String),
-    author: PostAuthor.fromJson(
-      (json['author'] as Map).cast<String, dynamic>(),
+    text: (json['text'] as String?) ?? '',
+    createdAt: DateTime.parse(
+      (json['created_at'] as String?) ?? (json['createdAt'] as String),
     ),
+    author: _authorFromJson(json),
   );
+
+  static PostAuthor _authorFromJson(Map<String, dynamic> json) {
+    final rawAuthor = json['author'];
+    if (rawAuthor is Map) {
+      return PostAuthor.fromJson(rawAuthor.cast<String, dynamic>());
+    }
+
+    return PostAuthor(
+      id: (json['user_id'] as String?) ?? (json['userId'] as String?) ?? '',
+      email: (json['email'] as String?) ?? 'Unknown',
+      username: json['username'] as String?,
+      avatarUrl: json['avatarUrl'] as String? ?? json['avatar_url'] as String?,
+    );
+  }
 }

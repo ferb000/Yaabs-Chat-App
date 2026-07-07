@@ -121,6 +121,10 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
+  void updateUser(AppUser user) {
+    state = state.copyWith(user: user);
+  }
+
   Future<void> _persistAuthResponse(Map<String, dynamic> res) async {
     final tokens = AuthTokens.fromJson(res);
     await storage.saveTokens(

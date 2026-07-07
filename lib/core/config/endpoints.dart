@@ -20,6 +20,9 @@ class Endpoints {
   static const follow = '/follow';
   static const unfollow = '/unfollow';
   static String followCounts(String userId) => '/users/$userId/follow-counts';
+  static String followers(String userId) => '/users/$userId/followers';
+  static String following(String userId) => '/users/$userId/following';
+  static const meAvatar = '/users/me/avatar';
   static const usersSearch = '/users/search';
 
   static String deletePost(String id) => '/posts/$id';

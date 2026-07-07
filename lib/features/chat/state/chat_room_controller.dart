@@ -5,6 +5,7 @@ import '../data/models.dart';
 // import '../data/chat_api.dart';
 import '../realtime/chat_socket.dart';
 import 'conversations_controller.dart';
+import '../../presence/state/presence_controller.dart';
 
 import '../../auth/state/auth_controller.dart'; // for my userId
 
@@ -450,6 +451,11 @@ class ChatRoomController extends StateNotifier<ChatRoomState> {
     }
 
     state = state.copyWith(members: members, memberLastRead: map);
+
+    final other = otherUserId;
+    if (other != null) {
+      await ref.read(presenceControllerProvider.notifier).fetchPresence(other);
+    }
   }
 
   // String? get myUserId => ref.read(authControllerProvider).user?.id;
@@ -513,7 +519,7 @@ class ChatRoomController extends StateNotifier<ChatRoomState> {
     final media = item['media'];
     if (media is! Map) return;
 
-    final m = (media as Map).cast<String, dynamic>();
+    final m = (media).cast<String, dynamic>();
 
     final url = m['url'] as String?;
     final mime = m['mime'] as String?;
@@ -531,6 +537,7 @@ class ChatRoomController extends StateNotifier<ChatRoomState> {
       durationMs: (durationRaw is num) ? durationRaw.toInt() : null,
     );
   }
+
   void _ingestAckAsMessage(Map<String, dynamic> ack) {
     final msgRaw = ack['message'];
     if (msgRaw is! Map) return;
@@ -565,4 +572,3 @@ class ChatRoomController extends StateNotifier<ChatRoomState> {
     state = state.copyWith(mediaByMessageId: updated);
   }
 }
-

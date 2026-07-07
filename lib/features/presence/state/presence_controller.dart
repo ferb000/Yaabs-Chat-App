@@ -53,7 +53,7 @@ class PresenceController extends StateNotifier<Map<String, PresenceInfo>> {
 
   Future<void> hydrateFromApi(String userId) async {
     final dio = ref.read(dioProvider);
-    final res = await dio.get(
+    await dio.get(
       Endpoints.followCounts(userId).replaceAll('/follow-counts', '/presence'),
     ); // safer: just build /users/:id/presence below if you have it.
   }
@@ -66,7 +66,7 @@ class PresenceController extends StateNotifier<Map<String, PresenceInfo>> {
     final isOnline = data['isOnline'] as bool? ?? false;
     final lastSeen = data['lastSeenAt'] != null
         ? DateTime.tryParse(data['lastSeenAt'])
-        : null;
+        : state[userId]?.lastSeenAt;
 
     state = {
       ...state,
