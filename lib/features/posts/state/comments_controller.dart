@@ -117,7 +117,10 @@ class CommentsController extends StateNotifier<AsyncValue<CommentsState>> {
 
       if (commentCount != null) {
         ref
-            .read(feedControllerProvider.notifier)
+            .read(feedControllerProvider('following').notifier)
+            .applyCommentCount(postId, commentCount);
+        ref
+            .read(feedControllerProvider('all').notifier)
             .applyCommentCount(postId, commentCount);
       }
     } catch (e) {
@@ -143,7 +146,10 @@ class CommentsController extends StateNotifier<AsyncValue<CommentsState>> {
       final res = await api.deleteComment(commentId);
       final commentCount = (res['commentCount'] as num).toInt();
       ref
-          .read(feedControllerProvider.notifier)
+          .read(feedControllerProvider('following').notifier)
+          .applyCommentCount(postId, commentCount);
+      ref
+          .read(feedControllerProvider('all').notifier)
           .applyCommentCount(postId, commentCount);
     } catch (_) {
       state = AsyncValue.data(current);

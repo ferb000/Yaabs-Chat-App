@@ -5,10 +5,18 @@ class PostsApi {
   final Dio dio;
   PostsApi(this.dio);
 
-  Future<Map<String, dynamic>> feed({String? cursor, int limit = 15}) async {
+  Future<Map<String, dynamic>> feed({
+    String? cursor,
+    int limit = 15,
+    String scope = 'following',
+  }) async {
     final res = await dio.get(
       Endpoints.feed,
-      queryParameters: {'limit': limit, if (cursor != null) 'cursor': cursor},
+      queryParameters: {
+        'limit': limit,
+        'scope': scope,
+        if (cursor != null) 'cursor': cursor,
+      },
     );
     return (res.data as Map).cast<String, dynamic>();
   }

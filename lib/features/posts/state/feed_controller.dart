@@ -26,20 +26,23 @@ class FeedState {
 }
 
 final feedControllerProvider =
-    StateNotifierProvider<FeedController, AsyncValue<FeedState>>((ref) {
-      return FeedController(ref);
-    });
+    StateNotifierProvider.family<FeedController, AsyncValue<FeedState>, String>(
+      (ref, scope) {
+        return FeedController(ref, scope);
+      },
+    );
 
 class FeedController extends StateNotifier<AsyncValue<FeedState>> {
-  FeedController(this.ref) : super(const AsyncValue.loading());
+  FeedController(this.ref, this.scope) : super(const AsyncValue.loading());
 
   final Ref ref;
+  final String scope;
 
   Future<void> load() async {
     state = const AsyncValue.loading();
     final api = ref.read(postsApiProvider);
     try {
-      final res = await api.feed(limit: 15);
+      final res = await api.feed(limit: 15, scope: scope);
       final posts = (res['items'] as List)
           .map((e) => Post.fromJson((e as Map).cast<String, dynamic>()))
           .toList();
@@ -62,7 +65,7 @@ class FeedController extends StateNotifier<AsyncValue<FeedState>> {
     final api = ref.read(postsApiProvider);
 
     try {
-      final res = await api.feed(cursor: cursor, limit: 15);
+      final res = await api.feed(cursor: cursor, limit: 15, scope: scope);
       final more = (res['items'] as List)
           .map((e) => Post.fromJson((e as Map).cast<String, dynamic>()))
           .toList();

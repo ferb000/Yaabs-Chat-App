@@ -142,7 +142,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
       );
 
       // 3) refresh feed
-      await ref.read(feedControllerProvider.notifier).load();
+      await ref.read(feedControllerProvider('following').notifier).load();
+      await ref.read(feedControllerProvider('all').notifier).load();
 
       if (mounted) Navigator.pop(context);
     } catch (e) {

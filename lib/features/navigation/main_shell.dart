@@ -16,23 +16,41 @@ class MainShell extends ConsumerStatefulWidget {
 
 class _MainShellState extends ConsumerState<MainShell> {
   int _index = 0;
+  final List<Widget?> _pages = List<Widget?>.filled(3, null);
+
+  Widget _buildPage(int index, String? userId) {
+    switch (index) {
+      case 0:
+        return const FeedPage();
+      case 1:
+        return const ConversationsPage();
+      case 2:
+        return userId != null
+            ? ProfilePage(userId: userId)
+            : const SizedBox.shrink();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final me = ref.watch(authControllerProvider.select((s) => s.user));
-    final pages = <Widget>[
-      const FeedPage(),
-      const ConversationsPage(),
-      if (me != null) ProfilePage(userId: me.id) else const SizedBox.shrink(),
-    ];
+    _pages[0] ??= _buildPage(0, me?.id);
+    if (_index == 1 || _pages[1] != null) {
+      _pages[1] ??= _buildPage(1, me?.id);
+    }
+    if (_index == 2 || _pages[2] != null) {
+      _pages[2] ??= _buildPage(2, me?.id);
+    }
 
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: Container(
         decoration: const BoxDecoration(gradient: AppGradients.background),
         child: IndexedStack(
-          index: _index.clamp(0, pages.length - 1),
-          children: pages,
+          index: _index.clamp(0, _pages.length - 1),
+          children: _pages.map((p) => p ?? const SizedBox.shrink()).toList(),
         ),
       ),
       bottomNavigationBar: SafeArea(
@@ -47,8 +65,13 @@ class _MainShellState extends ConsumerState<MainShell> {
               border: Border.all(color: AppColors.border),
             ),
             child: NavigationBar(
-              selectedIndex: _index.clamp(0, pages.length - 1),
-              onDestinationSelected: (value) => setState(() => _index = value),
+              selectedIndex: _index.clamp(0, _pages.length - 1),
+              onDestinationSelected: (value) {
+                setState(() {
+                  _index = value;
+                  _pages[value] ??= _buildPage(value, me?.id);
+                });
+              },
               backgroundColor: Colors.transparent,
               indicatorColor: AppColors.outgoing,
               destinations: const [

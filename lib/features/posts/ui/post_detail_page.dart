@@ -95,7 +95,12 @@ class PostDetailPage extends ConsumerWidget {
 
                     try {
                       await ref.read(postsApiProvider).deletePost(post.id);
-                      await ref.read(feedControllerProvider.notifier).load();
+                      await ref
+                          .read(feedControllerProvider('following').notifier)
+                          .load();
+                      await ref
+                          .read(feedControllerProvider('all').notifier)
+                          .load();
                       if (context.mounted) Navigator.pop(context);
                     } catch (e) {
                       if (context.mounted) {

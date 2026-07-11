@@ -23,15 +23,17 @@ class PeoplePage extends ConsumerStatefulWidget {
 class _PeoplePageState extends ConsumerState<PeoplePage>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController = TabController(
-    length: 3,
+    length: 4,
     vsync: this,
   );
   final _q = TextEditingController();
   final Set<String> _busyIds = {};
 
+  List<Map<String, dynamic>> _searchResults = [];
   List<Map<String, dynamic>> _followers = [];
   List<Map<String, dynamic>> _following = [];
   bool _loading = false;
+  bool _searching = false;
 
   @override
   void initState() {
@@ -99,6 +101,11 @@ class _PeoplePageState extends ConsumerState<PeoplePage>
       setState(() {
         _followers = results[0].map(_normalize).toList();
         _following = results[1].map(_normalize).toList();
+        final followingIds = _following.map((e) => e['id'] as String).toSet();
+        _searchResults = _searchResults.map((u) {
+          u['isFollowing'] = followingIds.contains(u['id'] as String);
+          return u;
+        }).toList();
       });
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -106,7 +113,30 @@ class _PeoplePageState extends ConsumerState<PeoplePage>
   }
 
   Future<void> _search() async {
-    await _loadDirectory(query: _q.text.trim().isEmpty ? null : _q.text.trim());
+    final q = _q.text.trim();
+    if (q.isEmpty) {
+      setState(() => _searchResults = []);
+      return;
+    }
+
+    final me = ref.read(authControllerProvider).user;
+    if (me == null) return;
+
+    setState(() => _searching = true);
+    try {
+      final api = ref.read(usersApiProvider);
+      final results = await api.search(q);
+      final followingIds = _following.map((e) => e['id'] as String).toSet();
+      final normalized = results.map(_normalize).map((u) {
+        u['isFollowing'] = followingIds.contains(u['id'] as String);
+        return u;
+      }).toList();
+
+      if (!mounted) return;
+      setState(() => _searchResults = normalized);
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
   }
 
   Future<void> _toggleFollow(Map<String, dynamic> user) async {
@@ -131,6 +161,15 @@ class _PeoplePageState extends ConsumerState<PeoplePage>
       await _loadDirectory(
         query: _q.text.trim().isEmpty ? null : _q.text.trim(),
       );
+      if (mounted) {
+        final followingIds = _following.map((e) => e['id'] as String).toSet();
+        setState(() {
+          _searchResults = _searchResults.map((u) {
+            u['isFollowing'] = followingIds.contains(u['id'] as String);
+            return u;
+          }).toList();
+        });
+      }
     } finally {
       if (mounted) setState(() => _busyIds.remove(id));
     }
@@ -146,7 +185,7 @@ class _PeoplePageState extends ConsumerState<PeoplePage>
   @override
   Widget build(BuildContext context) {
     final me = ref.watch(authControllerProvider.select((s) => s.user));
-    final feedState = ref.watch(feedControllerProvider).value;
+    final feedState = ref.watch(feedControllerProvider('following')).value;
 
     final q = _q.text.trim().toLowerCase();
     final followers = _followers.where((u) {
@@ -166,6 +205,11 @@ class _PeoplePageState extends ConsumerState<PeoplePage>
       return _displayName(u).toLowerCase().contains(q) ||
           ((u['email'] as String?) ?? '').toLowerCase().contains(q);
     }).toList();
+    final searchResults = _searchResults.where((u) {
+      if (q.isEmpty) return true;
+      return _displayName(u).toLowerCase().contains(q) ||
+          ((u['email'] as String?) ?? '').toLowerCase().contains(q);
+    }).toList();
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -174,6 +218,7 @@ class _PeoplePageState extends ConsumerState<PeoplePage>
         bottom: TabBar(
           controller: _tabController,
           tabs: [
+            Tab(text: 'Search (${searchResults.length})'),
             Tab(text: 'Followers (${followers.length})'),
             Tab(text: 'Following (${following.length})'),
             Tab(text: 'Suggested (${suggested.length})'),
@@ -184,6 +229,7 @@ class _PeoplePageState extends ConsumerState<PeoplePage>
             tooltip: 'Clear search',
             onPressed: () {
               _q.clear();
+              setState(() => _searchResults = []);
               _loadDirectory();
               setState(() {});
             },
@@ -247,13 +293,14 @@ class _PeoplePageState extends ConsumerState<PeoplePage>
                         textInputAction: TextInputAction.search,
                         onChanged: (_) => setState(() {}),
                         decoration: InputDecoration(
-                          hintText: 'Search these tabs',
+                          hintText: 'Search users to follow',
                           prefixIcon: const Icon(Icons.search_rounded),
                           suffixIcon: _q.text.isEmpty
                               ? null
                               : IconButton(
                                   onPressed: () {
                                     _q.clear();
+                                    setState(() => _searchResults = []);
                                     setState(() {});
                                     _loadDirectory();
                                   },
@@ -266,8 +313,8 @@ class _PeoplePageState extends ConsumerState<PeoplePage>
                         children: [
                           Expanded(
                             child: FilledButton.icon(
-                              onPressed: _loading ? null : _search,
-                              icon: _loading
+                              onPressed: _searching ? null : _search,
+                              icon: _searching
                                   ? const SizedBox(
                                       width: 16,
                                       height: 16,
@@ -283,6 +330,7 @@ class _PeoplePageState extends ConsumerState<PeoplePage>
                           OutlinedButton.icon(
                             onPressed: () {
                               _q.clear();
+                              setState(() => _searchResults = []);
                               _loadDirectory();
                               setState(() {});
                             },
@@ -299,6 +347,17 @@ class _PeoplePageState extends ConsumerState<PeoplePage>
                 child: TabBarView(
                   controller: _tabController,
                   children: [
+                    _PeopleList(
+                      emptyTitle: 'Search for people',
+                      emptySubtitle:
+                          'Type a name or email above to find users to follow.',
+                      loading: _searching,
+                      people: searchResults,
+                      meId: me?.id,
+                      busyIds: _busyIds,
+                      onOpenProfile: _openProfile,
+                      onToggleFollow: _toggleFollow,
+                    ),
                     _PeopleList(
                       emptyTitle: 'No followers yet',
                       emptySubtitle:
@@ -324,7 +383,7 @@ class _PeoplePageState extends ConsumerState<PeoplePage>
                     _PeopleList(
                       emptyTitle: 'Nothing to suggest right now',
                       emptySubtitle:
-                          'Once your feed has active posters, you’ll see suggested people here.',
+                          'Once your feed has active posters, you\'ll see suggested people here.',
                       loading: _loading,
                       people: suggested,
                       meId: me?.id,

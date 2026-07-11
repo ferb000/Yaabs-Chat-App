@@ -26,16 +26,32 @@ class FeedPage extends ConsumerStatefulWidget {
   ConsumerState<FeedPage> createState() => _FeedPageState();
 }
 
-class _FeedPageState extends ConsumerState<FeedPage> {
+class _FeedPageState extends ConsumerState<FeedPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController = TabController(
+    length: 2,
+    vsync: this,
+  );
+
   @override
   void initState() {
     super.initState();
-    Future.microtask(() => ref.read(feedControllerProvider.notifier).load());
+    Future.microtask(() async {
+      await ref.read(feedControllerProvider('following').notifier).load();
+      await ref.read(feedControllerProvider('all').notifier).load();
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final feed = ref.watch(feedControllerProvider);
+    final followingFeed = ref.watch(feedControllerProvider('following'));
+    final allFeed = ref.watch(feedControllerProvider('all'));
     final me = ref.watch(authControllerProvider.select((s) => s.user));
     final name = me?.username?.isNotEmpty == true
         ? me!.username!
@@ -49,6 +65,16 @@ class _FeedPageState extends ConsumerState<FeedPage> {
         elevation: 0,
         scrolledUnderElevation: 0,
         title: const Text('Feed'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(66),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+            child: _FeedSegmentedControl(
+              controller: _tabController,
+              labels: const ['Following', 'All'],
+            ),
+          ),
+        ),
         actions: [
           IconButton(
             tooltip: 'People',
@@ -82,102 +108,197 @@ class _FeedPageState extends ConsumerState<FeedPage> {
         decoration: const BoxDecoration(gradient: AppGradients.background),
         child: SafeArea(
           top: false,
-          child: feed.when(
-            loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('Error: $e')),
-            data: (state) {
-              if (state.items.isEmpty) {
-                return RefreshIndicator(
-                  onRefresh: () =>
-                      ref.read(feedControllerProvider.notifier).load(),
-                  child: ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(18, 8, 18, 120),
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: buildGlassCardDecoration(radius: 28),
-                        child: Column(
-                          children: [
-                            Container(
-                              width: 72,
-                              height: 72,
-                              decoration: BoxDecoration(
-                                gradient: AppGradients.header,
-                                borderRadius: BorderRadius.circular(24),
-                              ),
-                              child: const Icon(
-                                Icons.dynamic_feed_rounded,
-                                color: Colors.white,
-                                size: 34,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No posts yet',
-                              style: Theme.of(context).textTheme.titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.w800),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Be the first to share something fresh with your people.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: AppColors.muted),
-                            ),
-                            const SizedBox(height: 18),
-                            FilledButton.icon(
-                              onPressed: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const CreatePostPage(),
-                                ),
-                              ),
-                              icon: const Icon(Icons.edit_rounded),
-                              label: const Text('Create post'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-
-              return NotificationListener<ScrollNotification>(
-                onNotification: (n) {
-                  if (n.metrics.pixels > n.metrics.maxScrollExtent - 300) {
-                    ref.read(feedControllerProvider.notifier).loadMore();
-                  }
-                  return false;
-                },
-                child: RefreshIndicator(
-                  onRefresh: () =>
-                      ref.read(feedControllerProvider.notifier).load(),
-                  child: ListView.separated(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(18, 6, 18, 120),
-                    itemCount:
-                        state.items.length + (state.isLoadingMore ? 1 : 0),
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(height: 14),
-                    itemBuilder: (context, index) {
-                      if (index >= state.items.length) {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 16),
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      }
-
-                      final post = state.items[index];
-                      return _PostCard(post: post);
-                    },
-                  ),
-                ),
-              );
-            },
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _FeedList(
+                state: followingFeed,
+                onRefresh: () => ref
+                    .read(feedControllerProvider('following').notifier)
+                    .load(),
+                onLoadMore: () => ref
+                    .read(feedControllerProvider('following').notifier)
+                    .loadMore(),
+              ),
+              _FeedList(
+                state: allFeed,
+                onRefresh: () =>
+                    ref.read(feedControllerProvider('all').notifier).load(),
+                onLoadMore: () =>
+                    ref.read(feedControllerProvider('all').notifier).loadMore(),
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _FeedSegmentedControl extends StatelessWidget {
+  const _FeedSegmentedControl({required this.controller, required this.labels});
+
+  final TabController controller;
+  final List<String> labels;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        final index = controller.index.toDouble();
+
+        return Container(
+          height: 50,
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: AppColors.border),
+            boxShadow: AppShadows.soft,
+          ),
+          child: Stack(
+            children: [
+              AnimatedAlign(
+                alignment: Alignment(-1 + index * 2, 0),
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                child: FractionallySizedBox(
+                  widthFactor: 0.5,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: AppGradients.floatingAction,
+                      borderRadius: BorderRadius.circular(999),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x22000000),
+                          blurRadius: 12,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Row(
+                children: List.generate(labels.length, (i) {
+                  final selected = controller.index == i;
+                  return Expanded(
+                    child: GestureDetector(
+                      onTap: () => controller.animateTo(i),
+                      child: AnimatedDefaultTextStyle(
+                        duration: const Duration(milliseconds: 180),
+                        style: TextStyle(
+                          color: selected ? Colors.white : AppColors.muted,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                          fontFamily: 'Manrope',
+                        ),
+                        child: Center(child: Text(labels[i])),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FeedList extends StatelessWidget {
+  const _FeedList({
+    required this.state,
+    required this.onRefresh,
+    required this.onLoadMore,
+  });
+
+  final AsyncValue<FeedState> state;
+  final Future<void> Function() onRefresh;
+  final Future<void> Function() onLoadMore;
+
+  @override
+  Widget build(BuildContext context) {
+    return state.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('Error: $e')),
+      data: (value) {
+        if (value.items.isEmpty) {
+          return RefreshIndicator(
+            onRefresh: onRefresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(18, 8, 18, 120),
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: buildGlassCardDecoration(radius: 28),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          gradient: AppGradients.header,
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        child: const Icon(
+                          Icons.dynamic_feed_rounded,
+                          color: Colors.white,
+                          size: 34,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No posts yet',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Be the first to share something fresh with your people.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: AppColors.muted),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return NotificationListener<ScrollNotification>(
+          onNotification: (n) {
+            if (n.metrics.pixels > n.metrics.maxScrollExtent - 300) {
+              onLoadMore();
+            }
+            return false;
+          },
+          child: RefreshIndicator(
+            onRefresh: onRefresh,
+            child: ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(18, 6, 18, 120),
+              itemCount: value.items.length + (value.isLoadingMore ? 1 : 0),
+              separatorBuilder: (context, index) => const SizedBox(height: 14),
+              itemBuilder: (context, index) {
+                if (index >= value.items.length) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                return _PostCard(post: value.items[index]);
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -405,7 +526,7 @@ class _PostCard extends ConsumerWidget {
                   label: '${post.likeCount}',
                   active: post.likedByMe,
                   onTap: () => ref
-                      .read(feedControllerProvider.notifier)
+                      .read(feedControllerProvider('following').notifier)
                       .toggleLike(post),
                 ),
                 const SizedBox(width: 10),
@@ -511,7 +632,12 @@ class _PostCard extends ConsumerWidget {
                         ),
                       );
                       if (changed == true && context.mounted) {
-                        await ref.read(feedControllerProvider.notifier).load();
+                        await ref
+                            .read(feedControllerProvider('following').notifier)
+                            .load();
+                        await ref
+                            .read(feedControllerProvider('all').notifier)
+                            .load();
                       }
                     },
                   ),
@@ -544,7 +670,12 @@ class _PostCard extends ConsumerWidget {
 
                       try {
                         await ref.read(postsApiProvider).deletePost(post.id);
-                        await ref.read(feedControllerProvider.notifier).load();
+                        await ref
+                            .read(feedControllerProvider('following').notifier)
+                            .load();
+                        await ref
+                            .read(feedControllerProvider('all').notifier)
+                            .load();
                       } catch (e) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
