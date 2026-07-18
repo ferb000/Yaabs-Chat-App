@@ -6,6 +6,8 @@ import '../data/models.dart';
 import '../realtime/chat_socket.dart';
 import 'conversations_controller.dart';
 import '../../presence/state/presence_controller.dart';
+import '../../reactions/data/reaction_models.dart';
+import '../../reactions/state/reactions_provider.dart';
 
 import '../../auth/state/auth_controller.dart'; // for my userId
 
@@ -43,6 +45,10 @@ class ChatRoomState {
 
   // NEW:
   final Map<String, MessageMedia> mediaByMessageId;
+  final List<ChatMessage> searchResults;
+  final bool isSearching;
+  final String? searchError;
+  final String? highlightedMessageId;
 
   ChatRoomState({
     required this.messages,
@@ -52,10 +58,15 @@ class ChatRoomState {
     Map<String, String?>? memberLastRead,
     Set<String>? typingUsers,
     Map<String, MessageMedia>? mediaByMessageId,
+    List<ChatMessage>? searchResults,
+    this.isSearching = false,
+    this.searchError,
+    this.highlightedMessageId,
   }) : members = members ?? const [],
        memberLastRead = memberLastRead ?? const {},
        typingUsers = typingUsers ?? <String>{},
-       mediaByMessageId = mediaByMessageId ?? const {};
+       mediaByMessageId = mediaByMessageId ?? const {},
+       searchResults = searchResults ?? const [];
 
   ChatRoomState copyWith({
     List<ChatMessage>? messages,
@@ -65,6 +76,10 @@ class ChatRoomState {
     Map<String, String?>? memberLastRead,
     Set<String>? typingUsers,
     Map<String, MessageMedia>? mediaByMessageId,
+    List<ChatMessage>? searchResults,
+    bool? isSearching,
+    Object? searchError = _sentinel,
+    Object? highlightedMessageId = _sentinel,
   }) => ChatRoomState(
     messages: messages ?? this.messages,
     nextCursor: nextCursor ?? this.nextCursor,
@@ -73,6 +88,14 @@ class ChatRoomState {
     memberLastRead: memberLastRead ?? this.memberLastRead,
     typingUsers: typingUsers ?? this.typingUsers,
     mediaByMessageId: mediaByMessageId ?? this.mediaByMessageId,
+    searchResults: searchResults ?? this.searchResults,
+    isSearching: isSearching ?? this.isSearching,
+    searchError: identical(searchError, _sentinel)
+        ? this.searchError
+        : searchError as String?,
+    highlightedMessageId: identical(highlightedMessageId, _sentinel)
+        ? this.highlightedMessageId
+        : highlightedMessageId as String?,
   );
 }
 
@@ -419,6 +442,114 @@ class ChatRoomController extends StateNotifier<ChatRoomState> {
     _ingestAckAsMessage(ack);
   }
 
+  Future<void> toggleReaction(ChatMessage message, String reaction) async {
+    final previous = state;
+    final previousReaction = message.myReaction;
+    final optimisticSummary = message.reactionSummary.applyToggle(
+      previousReaction: previousReaction,
+      reaction: reaction,
+    );
+    final optimisticMyReaction = previousReaction == reaction ? null : reaction;
+
+    state = state.copyWith(
+      messages: state.messages.map((m) {
+        if (m.id != message.id) return m;
+        return m.copyWith(
+          reactionCount: optimisticSummary.total,
+          myReaction: optimisticMyReaction,
+          reactionSummary: optimisticSummary,
+        );
+      }).toList(),
+    );
+
+    try {
+      final res = await ref.read(reactionsApiProvider).toggle(
+        targetType: 'message',
+        targetId: message.id,
+        reaction: reaction,
+      );
+      final summary = ReactionSummary.fromJson(res['reactionSummary']);
+      state = state.copyWith(
+        messages: state.messages.map((m) {
+          if (m.id != message.id) return m;
+          return m.copyWith(
+            reactionCount: summary.total,
+            myReaction: res['myReaction'] as String?,
+            reactionSummary: summary,
+          );
+        }).toList(),
+      );
+    } catch (_) {
+      state = previous;
+    }
+  }
+
+  Future<void> searchMessages({String? query, String type = 'all'}) async {
+    final clean = query?.trim();
+    if ((clean == null || clean.isEmpty) && type == 'all') {
+      state = state.copyWith(searchResults: [], searchError: null);
+      return;
+    }
+
+    state = state.copyWith(isSearching: true, searchError: null);
+
+    try {
+      final api = ref.read(chatApiProvider);
+      final res = await api.searchMessages(
+        conversationId,
+        query: clean,
+        type: type,
+        limit: 30,
+      );
+
+      final rawItems = (res['items'] as List)
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .toList();
+      final results = rawItems.map(ChatMessage.fromJson).toList();
+      final mediaMap = Map<String, MessageMedia>.from(state.mediaByMessageId);
+      for (final item in rawItems) {
+        final msg = ChatMessage.fromJson(item);
+        _mergeMediaFromItem(item, msg, mediaMap);
+      }
+
+      state = state.copyWith(
+        isSearching: false,
+        searchResults: results,
+        mediaByMessageId: mediaMap,
+      );
+    } catch (e) {
+      state = state.copyWith(isSearching: false, searchError: e.toString());
+    }
+  }
+
+  void clearSearch() {
+    state = state.copyWith(
+      searchResults: [],
+      searchError: null,
+      highlightedMessageId: null,
+    );
+  }
+
+  void focusSearchResult(ChatMessage message) {
+    final existing = state.messages.any((m) => m.id == message.id);
+    final nextMessages = existing
+        ? state.messages
+        : ([...state.messages, message]
+              ..sort((a, b) => a.createdAt.compareTo(b.createdAt)));
+
+    state = state.copyWith(
+      messages: nextMessages,
+      highlightedMessageId: message.id,
+    );
+
+    Timer(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      if (state.highlightedMessageId == message.id) {
+        state = state.copyWith(highlightedMessageId: null);
+      }
+    });
+  }
+
   Future<void> _markRead(String messageId) async {
     final sock = ref.read(chatSocketProvider);
     try {
@@ -572,3 +703,5 @@ class ChatRoomController extends StateNotifier<ChatRoomState> {
     state = state.copyWith(mediaByMessageId: updated);
   }
 }
+
+const _sentinel = Object();

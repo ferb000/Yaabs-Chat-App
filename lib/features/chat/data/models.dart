@@ -1,3 +1,5 @@
+import '../../reactions/data/reaction_models.dart';
+
 class Conversation {
   final String id;
   final String type; // direct/group
@@ -49,6 +51,9 @@ class ChatMessage {
   final String type; // text/image/audio
   final String? text;
   final DateTime createdAt;
+  final int reactionCount;
+  final String? myReaction;
+  final ReactionSummary reactionSummary;
 
   ChatMessage({
     required this.id,
@@ -57,6 +62,9 @@ class ChatMessage {
     required this.type,
     required this.text,
     required this.createdAt,
+    this.reactionCount = 0,
+    this.myReaction,
+    this.reactionSummary = ReactionSummary.empty,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
@@ -69,6 +77,27 @@ class ChatMessage {
     createdAt: DateTime.parse(
       json['created_at'] as String? ?? json['createdAt'] as String,
     ),
+    reactionCount: (json['reactionCount'] as num?)?.toInt() ?? 0,
+    myReaction: json['myReaction'] as String?,
+    reactionSummary: ReactionSummary.fromJson(json['reactionSummary']),
+  );
+
+  ChatMessage copyWith({
+    int? reactionCount,
+    Object? myReaction = _sentinel,
+    ReactionSummary? reactionSummary,
+  }) => ChatMessage(
+    id: id,
+    conversationId: conversationId,
+    senderId: senderId,
+    type: type,
+    text: text,
+    createdAt: createdAt,
+    reactionCount: reactionCount ?? this.reactionCount,
+    myReaction: identical(myReaction, _sentinel)
+        ? this.myReaction
+        : myReaction as String?,
+    reactionSummary: reactionSummary ?? this.reactionSummary,
   );
 }
 
@@ -127,3 +156,5 @@ class ConversationMember {
   String get displayName =>
       (username != null && username!.trim().isNotEmpty) ? username! : email;
 }
+
+const _sentinel = Object();

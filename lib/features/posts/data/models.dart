@@ -1,3 +1,5 @@
+import '../../reactions/data/reaction_models.dart';
+
 class PostAuthor {
   final String id;
   final String email;
@@ -44,6 +46,9 @@ class Post {
   final int likeCount;
   final int commentCount;
   final bool likedByMe;
+  final int reactionCount;
+  final String? myReaction;
+  final ReactionSummary reactionSummary;
 
   Post({
     required this.id,
@@ -54,6 +59,9 @@ class Post {
     required this.likeCount,
     required this.commentCount,
     required this.likedByMe,
+    this.reactionCount = 0,
+    this.myReaction,
+    this.reactionSummary = ReactionSummary.empty,
   });
 
   factory Post.fromJson(Map<String, dynamic> json) => Post(
@@ -69,6 +77,33 @@ class Post {
     likeCount: (json['likeCount'] as num).toInt(),
     commentCount: (json['commentCount'] as num).toInt(),
     likedByMe: json['likedByMe'] as bool,
+    reactionCount: (json['reactionCount'] as num?)?.toInt() ?? 0,
+    myReaction: json['myReaction'] as String?,
+    reactionSummary: ReactionSummary.fromJson(json['reactionSummary']),
+  );
+
+  Post copyWith({
+    String? caption,
+    int? likeCount,
+    int? commentCount,
+    bool? likedByMe,
+    int? reactionCount,
+    Object? myReaction = _sentinel,
+    ReactionSummary? reactionSummary,
+  }) => Post(
+    id: id,
+    caption: caption ?? this.caption,
+    createdAt: createdAt,
+    author: author,
+    media: media,
+    likeCount: likeCount ?? this.likeCount,
+    commentCount: commentCount ?? this.commentCount,
+    likedByMe: likedByMe ?? this.likedByMe,
+    reactionCount: reactionCount ?? this.reactionCount,
+    myReaction: identical(myReaction, _sentinel)
+        ? this.myReaction
+        : myReaction as String?,
+    reactionSummary: reactionSummary ?? this.reactionSummary,
   );
 }
 
@@ -77,12 +112,18 @@ class Comment {
   final String text;
   final DateTime createdAt;
   final PostAuthor author;
+  final int reactionCount;
+  final String? myReaction;
+  final ReactionSummary reactionSummary;
 
   Comment({
     required this.id,
     required this.text,
     required this.createdAt,
     required this.author,
+    this.reactionCount = 0,
+    this.myReaction,
+    this.reactionSummary = ReactionSummary.empty,
   });
 
   factory Comment.fromJson(Map<String, dynamic> json) => Comment(
@@ -92,6 +133,25 @@ class Comment {
       (json['created_at'] as String?) ?? (json['createdAt'] as String),
     ),
     author: _authorFromJson(json),
+    reactionCount: (json['reactionCount'] as num?)?.toInt() ?? 0,
+    myReaction: json['myReaction'] as String?,
+    reactionSummary: ReactionSummary.fromJson(json['reactionSummary']),
+  );
+
+  Comment copyWith({
+    int? reactionCount,
+    Object? myReaction = _sentinel,
+    ReactionSummary? reactionSummary,
+  }) => Comment(
+    id: id,
+    text: text,
+    createdAt: createdAt,
+    author: author,
+    reactionCount: reactionCount ?? this.reactionCount,
+    myReaction: identical(myReaction, _sentinel)
+        ? this.myReaction
+        : myReaction as String?,
+    reactionSummary: reactionSummary ?? this.reactionSummary,
   );
 
   static PostAuthor _authorFromJson(Map<String, dynamic> json) {
@@ -108,3 +168,5 @@ class Comment {
     );
   }
 }
+
+const _sentinel = Object();

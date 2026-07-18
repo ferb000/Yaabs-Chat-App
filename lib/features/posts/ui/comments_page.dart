@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:full_node_chat_app/features/auth/state/auth_controller.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../reactions/ui/reaction_widgets.dart';
 import '../state/comments_controller.dart';
 
 class CommentsPage extends ConsumerStatefulWidget {
@@ -80,7 +82,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        tileColor: Colors.grey.withValues(alpha: 0.08),
+                        tileColor: AppColors.surface.withValues(alpha: 0.82),
                         title: Row(
                           children: [
                             Expanded(
@@ -112,7 +114,40 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                               ),
                           ],
                         ),
-                        subtitle: Text(c.text),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(c.text),
+                              ReactionStrip(
+                                summary: c.reactionSummary,
+                                myReaction: c.myReaction,
+                              ),
+                              const SizedBox(height: 6),
+                              ReactionActionButton(
+                                myReaction: c.myReaction,
+                                onTap: isSending
+                                    ? () {}
+                                    : () async {
+                                        final reaction =
+                                            await showReactionPicker(
+                                              context,
+                                              selectedReaction: c.myReaction,
+                                            );
+                                        if (reaction == null) return;
+                                        await ref
+                                            .read(
+                                              commentsControllerProvider(
+                                                widget.postId,
+                                              ).notifier,
+                                            )
+                                            .toggleReaction(c, reaction);
+                                      },
+                              ),
+                            ],
+                          ),
+                        ),
                         trailing: me?.id == c.author.id && !isSending
                             ? IconButton(
                                 icon: const Icon(Icons.delete_outline),

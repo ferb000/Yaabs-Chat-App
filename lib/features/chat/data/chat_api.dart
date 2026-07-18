@@ -22,6 +22,23 @@ class ChatApi {
     return (res.data as Map).cast<String, dynamic>();
   }
 
+  Future<Map<String, dynamic>> searchMessages(
+    String conversationId, {
+    String? query,
+    String type = 'all',
+    int limit = 30,
+  }) async {
+    final res = await dio.get(
+      '${Endpoints.messages(conversationId)}/search',
+      queryParameters: {
+        'type': type,
+        'limit': limit,
+        if (query != null && query.trim().isNotEmpty) 'q': query.trim(),
+      },
+    );
+    return (res.data as Map).cast<String, dynamic>();
+  }
+
   Future<Map<String, dynamic>> getConversationDetail(
     String conversationId,
   ) async {

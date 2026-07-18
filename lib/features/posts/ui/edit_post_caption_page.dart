@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:full_node_chat_app/features/posts/state/feed_controller.dart';
-import '../data/posts_api.dart';
 
 class EditPostCaptionPage extends ConsumerStatefulWidget {
   const EditPostCaptionPage({

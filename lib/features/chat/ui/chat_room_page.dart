@@ -14,6 +14,7 @@ import 'widgets/audio_bubble.dart';
 
 import '../../auth/state/auth_controller.dart';
 import '../../presence/state/presence_controller.dart';
+import '../../reactions/ui/reaction_widgets.dart';
 import '../../users/ui/widgets/profile_avatar.dart';
 
 import 'package:flutter/foundation.dart'; // kIsWeb
@@ -35,12 +36,15 @@ class ChatRoomPage extends ConsumerStatefulWidget {
 
 class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
   final _text = TextEditingController();
+  final _search = TextEditingController();
   final _picker = ImagePicker();
   final _recorder = AudioRecorder();
   final _scrollController = ScrollController();
 
   bool _recording = false;
   bool _initialJumpDone = false;
+  bool _searchMode = false;
+  String _searchType = 'all';
 
   XFile? _pendingImage;
   bool _uploadingImage = false;
@@ -48,6 +52,7 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
   @override
   void dispose() {
     _text.dispose();
+    _search.dispose();
     _scrollController.dispose();
     _recorder.dispose();
     super.dispose();
@@ -106,38 +111,69 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
       backgroundColor: AppColors.bg,
       appBar: AppBar(
         titleSpacing: 0,
-        title: Row(
-          children: [
-            ProfileAvatar(
-              name: widget.title,
-              avatarUrl: otherMember?.avatarUrl,
-              size: 40,
-              radius: 14,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+        title: _searchMode
+            ? _ChatSearchField(
+                controller: _search,
+                onChanged: (value) => controller.searchMessages(
+                  query: value,
+                  type: _searchType,
+                ),
+              )
+            : Row(
                 children: [
-                  Text(
-                    widget.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  ProfileAvatar(
+                    name: widget.title,
+                    avatarUrl: otherMember?.avatarUrl,
+                    size: 40,
+                    radius: 14,
                   ),
-                  Text(
-                    statusText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12.5),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          statusText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12.5),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
         actions: [
-          IconButton(onPressed: () {}, icon: const Icon(Icons.call_rounded)),
+          if (_searchMode)
+            IconButton(
+              tooltip: 'Close search',
+              onPressed: () {
+                setState(() {
+                  _searchMode = false;
+                  _search.clear();
+                  _searchType = 'all';
+                });
+                controller.clearSearch();
+              },
+              icon: const Icon(Icons.close_rounded),
+            )
+          else
+            IconButton(
+              tooltip: 'Search messages',
+              onPressed: () {
+                setState(() => _searchMode = true);
+                controller.clearSearch();
+              },
+              icon: const Icon(Icons.search_rounded),
+            ),
+          if (!_searchMode)
+            IconButton(onPressed: () {}, icon: const Icon(Icons.call_rounded)),
           IconButton(
             onPressed: () {},
             icon: const Icon(Icons.more_vert_rounded),
@@ -151,6 +187,25 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
           top: false,
           child: Column(
             children: [
+              if (_searchMode)
+                _ChatSearchPanel(
+                  type: _searchType,
+                  isLoading: state.isSearching,
+                  error: state.searchError,
+                  results: state.searchResults,
+                  mediaByMessageId: state.mediaByMessageId,
+                  onTypeChanged: (type) {
+                    setState(() => _searchType = type);
+                    controller.searchMessages(
+                      query: _search.text,
+                      type: type,
+                    );
+                  },
+                  onResultTap: (message) {
+                    controller.focusSearchResult(message);
+                    _scrollToMessage(message.id, state.isLoadingMore);
+                  },
+                ),
               Expanded(
                 child: NotificationListener<ScrollNotification>(
                   onNotification: (n) {
@@ -174,6 +229,7 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
 
                       final messageIndex = i - (state.isLoadingMore ? 1 : 0);
                       final m = state.messages[messageIndex];
+                      final highlighted = state.highlightedMessageId == m.id;
 
                       final myId = ref.watch(authControllerProvider).user?.id;
                       final isMine = myId != null && m.senderId == myId;
@@ -218,29 +274,44 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
                         }
                       }
 
-                      final bubble = ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 320),
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 4),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: isMine
-                                ? AppColors.outgoing
-                                : AppColors.surface,
-                            borderRadius: BorderRadius.only(
-                              topLeft: const Radius.circular(22),
-                              topRight: const Radius.circular(22),
-                              bottomLeft: Radius.circular(isMine ? 22 : 6),
-                              bottomRight: Radius.circular(isMine ? 6 : 22),
-                            ),
-                            boxShadow: isMine ? null : AppShadows.soft,
-                            border: Border.all(
+                      final bubble = GestureDetector(
+                        onLongPress: () async {
+                          final reaction = await showReactionPicker(
+                            context,
+                            selectedReaction: m.myReaction,
+                          );
+                          if (reaction == null) return;
+                          await controller.toggleReaction(m, reaction);
+                        },
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 320),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 220),
+                            margin: const EdgeInsets.only(bottom: 4),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
                               color: isMine
-                                  ? Colors.transparent
-                                  : AppColors.border,
+                                  ? (highlighted
+                                        ? const Color(0xFFD6F5D6)
+                                        : AppColors.outgoing)
+                                  : (highlighted
+                                        ? const Color(0xFFFFF5CC)
+                                        : AppColors.surface),
+                              borderRadius: BorderRadius.only(
+                                topLeft: const Radius.circular(22),
+                                topRight: const Radius.circular(22),
+                                bottomLeft: Radius.circular(isMine ? 22 : 6),
+                                bottomRight: Radius.circular(isMine ? 6 : 22),
+                              ),
+                              boxShadow: isMine ? null : AppShadows.soft,
+                              border: Border.all(
+                                color: isMine
+                                    ? Colors.transparent
+                                    : AppColors.border,
+                              ),
                             ),
+                            child: _messageBody(m, state, isMine),
                           ),
-                          child: _messageBody(m, state, isMine),
                         ),
                       );
 
@@ -256,6 +327,11 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
                                 : CrossAxisAlignment.start,
                             children: [
                               bubble,
+                              ReactionStrip(
+                                summary: m.reactionSummary,
+                                myReaction: m.myReaction,
+                                compact: true,
+                              ),
                               status ?? const SizedBox.shrink(),
                             ],
                           ),
@@ -375,6 +451,25 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
         ),
       ),
     );
+  }
+
+  void _scrollToMessage(String messageId, bool isLoadingMore) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      final state = ref.read(chatRoomControllerProvider(widget.conversationId));
+      final index = state.messages.indexWhere((m) => m.id == messageId);
+      if (index < 0) return;
+      final visualIndex = index + (isLoadingMore ? 1 : 0);
+      final target = (visualIndex * 92.0).clamp(
+        0.0,
+        _scrollController.position.maxScrollExtent,
+      );
+      _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
+    });
   }
 
   String _renderMessage(ChatMessage m) {
@@ -511,6 +606,158 @@ class _ChatRoomPageState extends ConsumerState<ChatRoomPage> {
         context,
       ).showSnackBar(SnackBar(content: Text('Failed to send image: $e')));
     }
+  }
+}
+
+class _ChatSearchField extends StatelessWidget {
+  const _ChatSearchField({required this.controller, required this.onChanged});
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      autofocus: true,
+      onChanged: onChanged,
+      decoration: InputDecoration(
+        hintText: 'Search messages',
+        isDense: true,
+        filled: true,
+        fillColor: AppColors.surface,
+        prefixIcon: const Icon(Icons.search_rounded),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(999),
+          borderSide: BorderSide.none,
+        ),
+      ),
+    );
+  }
+}
+
+class _ChatSearchPanel extends StatelessWidget {
+  const _ChatSearchPanel({
+    required this.type,
+    required this.isLoading,
+    required this.error,
+    required this.results,
+    required this.mediaByMessageId,
+    required this.onTypeChanged,
+    required this.onResultTap,
+  });
+
+  final String type;
+  final bool isLoading;
+  final String? error;
+  final List<ChatMessage> results;
+  final Map<String, MessageMedia> mediaByMessageId;
+  final ValueChanged<String> onTypeChanged;
+  final ValueChanged<ChatMessage> onResultTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.border),
+        boxShadow: AppShadows.soft,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final item in const [
+                  ('all', 'All', Icons.manage_search_rounded),
+                  ('text', 'Text', Icons.notes_rounded),
+                  ('image', 'Images', Icons.image_outlined),
+                  ('link', 'Links', Icons.link_rounded),
+                  ('audio', 'Audio', Icons.mic_none_rounded),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      selected: type == item.$1,
+                      avatar: Icon(item.$3, size: 16),
+                      label: Text(item.$2),
+                      onSelected: (_) => onTypeChanged(item.$1),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (isLoading)
+            const Padding(
+              padding: EdgeInsets.only(top: 10),
+              child: LinearProgressIndicator(minHeight: 2),
+            )
+          else if (error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                'Search failed',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            )
+          else if (results.isNotEmpty)
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 210),
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.only(top: 10),
+                itemCount: results.length,
+                separatorBuilder: (context, index) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final message = results[index];
+                  final media = mediaByMessageId[message.id];
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(_iconForMessage(message.type)),
+                    title: Text(
+                      _summaryForMessage(message, media),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(_formatSearchTime(message.createdAt)),
+                    onTap: () => onResultTap(message),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  IconData _iconForMessage(String type) {
+    if (type == 'image') return Icons.image_outlined;
+    if (type == 'audio') return Icons.mic_none_rounded;
+    return Icons.notes_rounded;
+  }
+
+  String _summaryForMessage(ChatMessage message, MessageMedia? media) {
+    if (message.type == 'text') return message.text ?? '';
+    if (message.type == 'image') return media?.mime ?? 'Image message';
+    if (message.type == 'audio') return media?.mime ?? 'Voice note';
+    return 'Message';
+  }
+
+  String _formatSearchTime(DateTime dt) {
+    final local = dt.toLocal();
+    final h = local.hour.toString().padLeft(2, '0');
+    final m = local.minute.toString().padLeft(2, '0');
+    return '${local.month}/${local.day}/${local.year} $h:$m';
   }
 }
 

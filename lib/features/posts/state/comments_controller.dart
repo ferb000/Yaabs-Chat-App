@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../auth/state/auth_controller.dart';
+import '../../reactions/data/reaction_models.dart';
+import '../../reactions/state/reactions_provider.dart';
 import '../data/models.dart';
 import 'feed_controller.dart';
 
@@ -151,6 +153,52 @@ class CommentsController extends StateNotifier<AsyncValue<CommentsState>> {
       ref
           .read(feedControllerProvider('all').notifier)
           .applyCommentCount(postId, commentCount);
+    } catch (_) {
+      state = AsyncValue.data(current);
+    }
+  }
+
+  Future<void> toggleReaction(Comment comment, String reaction) async {
+    final current = state.value;
+    if (current == null) return;
+
+    final previousReaction = comment.myReaction;
+    final optimisticSummary = comment.reactionSummary.applyToggle(
+      previousReaction: previousReaction,
+      reaction: reaction,
+    );
+    final optimisticMyReaction = previousReaction == reaction ? null : reaction;
+
+    final optimisticItems = current.items.map((c) {
+      if (c.id != comment.id) return c;
+      return c.copyWith(
+        reactionCount: optimisticSummary.total,
+        myReaction: optimisticMyReaction,
+        reactionSummary: optimisticSummary,
+      );
+    }).toList();
+
+    state = AsyncValue.data(current.copyWith(items: optimisticItems));
+
+    try {
+      final res = await ref.read(reactionsApiProvider).toggle(
+        targetType: 'comment',
+        targetId: comment.id,
+        reaction: reaction,
+      );
+      final summary = ReactionSummary.fromJson(res['reactionSummary']);
+      final updated = state.value?.items.map((c) {
+        if (c.id != comment.id) return c;
+        return c.copyWith(
+          reactionCount: summary.total,
+          myReaction: res['myReaction'] as String?,
+          reactionSummary: summary,
+        );
+      }).toList();
+      final latest = state.value;
+      if (latest != null && updated != null) {
+        state = AsyncValue.data(latest.copyWith(items: updated));
+      }
     } catch (_) {
       state = AsyncValue.data(current);
     }

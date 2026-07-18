@@ -15,6 +15,7 @@ import '../../users/ui/profile_page.dart';
 import '../../users/data/profile_api.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/di/providers.dart';
+import '../../reactions/ui/reaction_widgets.dart';
 import '../utils/post_links.dart';
 import '../../users/ui/widgets/profile_avatar.dart';
 import 'widgets/post_media_view.dart';
@@ -112,6 +113,7 @@ class _FeedPageState extends ConsumerState<FeedPage>
             controller: _tabController,
             children: [
               _FeedList(
+                scope: 'following',
                 state: followingFeed,
                 onRefresh: () => ref
                     .read(feedControllerProvider('following').notifier)
@@ -121,6 +123,7 @@ class _FeedPageState extends ConsumerState<FeedPage>
                     .loadMore(),
               ),
               _FeedList(
+                scope: 'all',
                 state: allFeed,
                 onRefresh: () =>
                     ref.read(feedControllerProvider('all').notifier).load(),
@@ -211,11 +214,13 @@ class _FeedSegmentedControl extends StatelessWidget {
 class _FeedList extends StatelessWidget {
   const _FeedList({
     required this.state,
+    required this.scope,
     required this.onRefresh,
     required this.onLoadMore,
   });
 
   final AsyncValue<FeedState> state;
+  final String scope;
   final Future<void> Function() onRefresh;
   final Future<void> Function() onLoadMore;
 
@@ -293,7 +298,7 @@ class _FeedList extends StatelessWidget {
                   );
                 }
 
-                return _PostCard(post: value.items[index]);
+                return _PostCard(post: value.items[index], scope: scope);
               },
             ),
           ),
@@ -412,8 +417,9 @@ class _FeedDrawer extends StatelessWidget {
 }
 
 class _PostCard extends ConsumerWidget {
-  const _PostCard({required this.post});
+  const _PostCard({required this.post, required this.scope});
   final Post post;
+  final String scope;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -519,17 +525,23 @@ class _PostCard extends ConsumerWidget {
               ),
             ],
             const SizedBox(height: 14),
-            Row(
+            ReactionStrip(
+              summary: post.reactionSummary,
+              myReaction: post.myReaction,
+            ),
+            if (post.reactionSummary.total > 0) const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
               children: [
                 _ActionPill(
                   icon: post.likedByMe ? Icons.favorite : Icons.favorite_border,
                   label: '${post.likeCount}',
                   active: post.likedByMe,
                   onTap: () => ref
-                      .read(feedControllerProvider('following').notifier)
+                      .read(feedControllerProvider(scope).notifier)
                       .toggleLike(post),
                 ),
-                const SizedBox(width: 10),
                 _ActionPill(
                   icon: Icons.mode_comment_outlined,
                   label: '${post.commentCount}',
@@ -539,6 +551,19 @@ class _PostCard extends ConsumerWidget {
                       builder: (_) => CommentsPage(postId: post.id),
                     ),
                   ),
+                ),
+                ReactionActionButton(
+                  myReaction: post.myReaction,
+                  onTap: () async {
+                    final reaction = await showReactionPicker(
+                      context,
+                      selectedReaction: post.myReaction,
+                    );
+                    if (reaction == null) return;
+                    await ref
+                        .read(feedControllerProvider(scope).notifier)
+                        .toggleReaction(post, reaction);
+                  },
                 ),
               ],
             ),
